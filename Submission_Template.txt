@@ -20,27 +20,30 @@ Implemented features:
   - Parsers: PDF text page by page, CSV vehicle count (nonblank rows after the header), and an attachment inventory. Each PDF's type (application or loss runs report) is decided from its page 1 heading, not its filename.
   - LLM extraction of the 7 text fields from the broker email and the application PDF, validated against a JSON schema with Pydantic. Each value has its source file, the exact excerpt and its location (email body or PDF page N).
   - loss_runs_present is decided from the uploaded files only, never from the email text. schedule_vehicle_count comes from the CSV.
-  - Merge and normalization (CA/California, 150/150.0, Yes/No) into KNOWN, MISSING, CONFLICT or INVALID. When the email and PDF disagree, the value is null and both answers are kept with their evidence. A missing field lists the sources checked, and a missing loss runs report shows the attachment inventory.
+  - Merge and normalization into KNOWN, MISSING, CONFLICT or INVALID. Harmless differences are cleaned up in code: any US state name or code (Texas/TX), common date formats (2026-11-01, 11/01/2026, Nov 1, 2026), numbers with units or commas (150 miles, 150.0, 4 vehicles), and Yes/No. Hedged answers such as "about 150" stay INVALID.
+  - Grounding check: an extracted answer is used only if its excerpt is found in the source text and the answer appears in that excerpt; otherwise the field is INVALID. When the email and PDF disagree, the value is null and both answers are kept with their evidence. A missing field lists the sources checked, and a missing loss runs report shows the attachment inventory.
   - Rules R1-R5 and the overall status (READY_FOR_REVIEW or NEEDS_REVIEW) in plain Python. Each rule shows its status, reason and the values used. The LLM never decides a rule result.
   - An AI-generated underwriter summary and an editable draft broker email requesting missing, conflicting or flagged items. The items to request are chosen in code. The email is a draft only and is never sent.
-  - Human overrides: a corrected field is labelled HUMAN OVERRIDE, its original value and evidence are kept, and the checks rerun.
+  - Human overrides: a corrected field is labelled HUMAN OVERRIDE, its original value and evidence are kept, and the checks rerun. The summary and draft are then marked as out of date, and a "Regenerate summary and email" button rewrites them with the corrected values.
+  - A "Needs attention" list under the rule results shows every missing, conflicting, invalid or flagged item.
   - Each packet is processed independently. Processing a packet or clicking "Start new packet" clears all previous data.
   - LLM failure handling: a missing or invalid key, a connection error, or an invalid answer shows "LLM unavailable", and every result that comes from the files and the rules is kept.
   - Document text is treated as data, and instructions inside it are ignored.
   - Results on the sample packets match the expected outcomes: SUB-A READY_FOR_REVIEW; SUB-B and SUB-C NEEDS_REVIEW, with the expected R1-R5 statuses.
 Known limitations or incomplete requirements:
-  - Loss runs reports are recognised by "loss run" or "loss history" in the first lines of page 1. A report with a different title would not be recognised.
+  - Loss runs reports are recognised by their page 1 heading (e.g. "Loss runs", "Loss history", "Claims history", "Loss experience"). A report with an unusual title would not be recognised.
   - The application PDF is recognised by the word "application" in its page 1 heading.
   - One email (an uploaded .txt or the pasted text), one application PDF and one CSV are used per packet. .eml files are not read.
-  - Dates must be YYYY-MM-DD, and radius and vehicle count must be plain numbers. The only full state name converted to its code is California.
+  - Slashed dates are read month/day/year. Hedged answers ("about 150", "within 150 miles") are INVALID and need a reviewer correction.
   - If the LLM fails for every source, R1 gives UNKNOWN rather than FLAG, because the fields could not be checked.
-  - After a correction only the checks rerun. The summary and draft email are not regenerated.
+  - After a correction the summary and draft email are regenerated only when the reviewer clicks the button, and this replaces any edits made to the draft.
+  - The demo video was recorded before the latest changes (plain value display, "Needs attention" list, Regenerate button and broader normalization), so the screen in the video differs slightly from the current app.
   - Scanned PDFs, OCR, live email, deployment and authentication are out of scope.
   - No required feature is known to be incomplete.
 Test command and test result summary:
-  pytest -> 104 passed, 8 skipped. No live LLM calls; the skipped tests are the live tests.
+  pytest -> 112 passed, 8 skipped. No live LLM calls; the skipped tests are the live tests.
   RUN_LIVE_TESTS=1 pytest tests/test_live.py -> 8 passed. These use the real API.
-  The tests cover missing information, a source conflict, unequal vehicle counts, the 150-mile threshold (150 passes and 150.1 is flagged), loss runs detection, normalization, human overrides, LLM failure handling and the Streamlit screen.
+  The tests cover missing information, a source conflict, unequal vehicle counts, the 150-mile threshold (150 passes and 150.1 is flagged), loss runs detection, normalization of harmless differences, the grounding check, human overrides, regenerating the summary after a correction, LLM failure handling and the Streamlit screen.
 
 Los Angeles onsite work:  Willing to relocate
 Earliest realistic onsite start or relocation timeline: nov 1, 2026.
