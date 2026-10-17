@@ -1,0 +1,6 @@
+streamlit==1.66.0
+pydantic==2.14.1
+pypdf==6.21.1
+anthropic==1.15.0
+python-dotenv==1.2.4
+pytest==9.1.1

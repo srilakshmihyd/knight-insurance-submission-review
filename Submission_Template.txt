@@ -1,0 +1,48 @@
+Subject: AI Developer Project Submission - Srilakshmi Kanagala
+
+Full name: Srilakshmi Kanagala
+Email:kanagalasrilakshmi1998@gmail.com
+Source code ZIP attached or repository URL: [FILL IN: "ZIP attached" or the repository URL]
+Access instructions if the repository is private:"Not applicable"
+Demo video attachment or accessible URL (5-10 minutes): [FILL IN]
+README location: README.md in the root of the project folder
+Setup and run commands:
+  python3.11 -m venv .venv
+  source .venv/bin/activate
+  pip install -r requirements.txt
+  cp .env.example .env    (then add an Anthropic API key to .env)
+  streamlit run streamlit_app.py    (opens at http://localhost:8501)
+LLM provider and model: Anthropic Claude, claude-sonnet-5-5, through the official anthropic Python SDK. The model can be changed with the ANTHROPIC_MODEL setting in .env.
+AI coding tools used: Claude Code (Anthropic)
+Approximate time spent: 6 hours
+Implemented features:
+  - Starts with an empty screen. The user uploads one packet's files or pastes the broker email, and the screen shows processing, success and failure states.
+  - Parsers: PDF text page by page, CSV vehicle count (nonblank rows after the header), and an attachment inventory. Each PDF's type (application or loss runs report) is decided from its page 1 heading, not its filename.
+  - LLM extraction of the 7 text fields from the broker email and the application PDF, validated against a JSON schema with Pydantic. Each value has its source file, the exact excerpt and its location (email body or PDF page N).
+  - loss_runs_present is decided from the uploaded files only, never from the email text. schedule_vehicle_count comes from the CSV.
+  - Merge and normalization (CA/California, 150/150.0, Yes/No) into KNOWN, MISSING, CONFLICT or INVALID. When the email and PDF disagree, the value is null and both answers are kept with their evidence. A missing field lists the sources checked, and a missing loss runs report shows the attachment inventory.
+  - Rules R1-R5 and the overall status (READY_FOR_REVIEW or NEEDS_REVIEW) in plain Python. Each rule shows its status, reason and the values used. The LLM never decides a rule result.
+  - An AI-generated underwriter summary and an editable draft broker email requesting missing, conflicting or flagged items. The items to request are chosen in code. The email is a draft only and is never sent.
+  - Human overrides: a corrected field is labelled HUMAN OVERRIDE, its original value and evidence are kept, and the checks rerun.
+  - Each packet is processed independently. Processing a packet or clicking "Start new packet" clears all previous data.
+  - LLM failure handling: a missing or invalid key, a connection error, or an invalid answer shows "LLM unavailable", and every result that comes from the files and the rules is kept.
+  - Document text is treated as data, and instructions inside it are ignored.
+  - Results on the sample packets match the expected outcomes: SUB-A READY_FOR_REVIEW; SUB-B and SUB-C NEEDS_REVIEW, with the expected R1-R5 statuses.
+Known limitations or incomplete requirements:
+  - Loss runs reports are recognised by "loss run" or "loss history" in the first lines of page 1. A report with a different title would not be recognised.
+  - The application PDF is recognised by the word "application" in its page 1 heading.
+  - One email (an uploaded .txt or the pasted text), one application PDF and one CSV are used per packet. .eml files are not read.
+  - Dates must be YYYY-MM-DD, and radius and vehicle count must be plain numbers. The only full state name converted to its code is California.
+  - If the LLM fails for every source, R1 gives UNKNOWN rather than FLAG, because the fields could not be checked.
+  - After a correction only the checks rerun. The summary and draft email are not regenerated.
+  - Scanned PDFs, OCR, live email, deployment and authentication are out of scope.
+  - No required feature is known to be incomplete.
+Test command and test result summary:
+  pytest -> 104 passed, 8 skipped. No live LLM calls; the skipped tests are the live tests.
+  RUN_LIVE_TESTS=1 pytest tests/test_live.py -> 8 passed. These use the real API.
+  The tests cover missing information, a source conflict, unequal vehicle counts, the 150-mile threshold (150 passes and 150.1 is flagged), loss runs detection, normalization, human overrides, LLM failure handling and the Streamlit screen.
+
+Los Angeles onsite work:  Willing to relocate
+Earliest realistic onsite start or relocation timeline: nov 1, 2026.
+
+I confirm that I can explain the submitted implementation and identify the tools and assistance used.
