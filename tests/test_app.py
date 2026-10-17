@@ -60,6 +60,7 @@ def test_pasted_email_is_processed_and_all_sections_shown(stub_llm):
     assert not at.exception
     assert [s.value for s in at.success] == ["Packet processed."]
     assert headers[0] == "Overall: NEEDS_REVIEW"
+    assert any(m.value.startswith("**Needs attention:**") for m in at.markdown)
     for section in ("Extracted fields", "Attachment inventory", "Correct a field",
                     "Underwriter summary (AI-generated)", "Draft broker email"):
         assert section in headers
@@ -83,9 +84,30 @@ def test_correction_is_labelled_and_rules_rerun(stub_llm):
     at.text_input[0].set_value("No")
     at.button(key="FormSubmitter:override_form-Apply correction and rerun checks").click().run(timeout=30)
     labels = [x.label for x in at.expander]
-    assert "hazardous_materials: False [KNOWN] - HUMAN OVERRIDE" in labels
+    assert "hazardous_materials: No [KNOWN] - HUMAN OVERRIDE" in labels
     rules = at.dataframe[0].value
     assert rules.loc[rules["Rule"] == "R4", "Status"].item() == "PASS"
+
+
+def test_summary_is_marked_stale_after_a_correction_and_can_be_regenerated(stub_llm, monkeypatch):
+    at = processed_app()
+    assert not at.warning
+    at.selectbox[0].set_value("hazardous_materials")
+    at.text_input[0].set_value("No")
+    at.button(key="FormSubmitter:override_form-Apply correction and rerun checks").click().run(timeout=30)
+    assert any("before your latest corrections" in w.value for w in at.warning)
+
+    seen = []
+    def fake_narrative(prompt):
+        seen.append(prompt)
+        return LlmNarrative(summary="New summary", email_draft="New draft")
+    monkeypatch.setattr(narrative, "call_llm", fake_narrative)
+    next(b for b in at.button if b.label == "Regenerate summary and email").click().run(timeout=30)
+
+    assert "hazardous_materials: False [KNOWN] Human override" in seen[0]
+    assert not any("before your latest corrections" in w.value for w in at.warning)
+    assert "New summary" in [m.value for m in at.markdown]
+    assert at.text_area[1].value == "New draft"
 
 
 def test_invalid_correction_is_rejected(stub_llm):

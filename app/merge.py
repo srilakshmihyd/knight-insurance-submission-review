@@ -1,6 +1,7 @@
 import re
-from datetime import date
+from datetime import datetime
 
+from app.extract import squash
 from app.models import (
     LLM_FIELDS,
     CsvCount,
@@ -9,6 +10,7 @@ from app.models import (
     LossRunsResult,
     MergedField,
     SourceExtraction,
+    SourceField,
 )
 
 
@@ -26,35 +28,73 @@ def norm_text(text: str) -> str:
     return cleaned
 
 
+# Accepted ways of writing a date. Slashed dates are read the US way (month/day/year).
+DATE_FORMATS = ("%Y-%m-%d", "%m/%d/%Y", "%B %d, %Y", "%b %d, %Y", "%B %d %Y", "%b %d %Y", "%d %B %Y", "%d %b %Y")
+
+
 def norm_date(text: str) -> str:
-    cleaned = text.strip()
-    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", cleaned):
-        raise Invalid(f"'{cleaned}' is not a YYYY-MM-DD date")
-    try:
-        date.fromisoformat(cleaned)
-    except ValueError:
-        raise Invalid(f"'{cleaned}' is not a real calendar date")
-    return cleaned
+    """'2026-11-01', '11/01/2026', 'Nov 1, 2026', 'November 1st, 2026' and '1 November 2026' all
+    become '2026-11-01'. Anything else, or an impossible date like Feb 30, is INVALID."""
+    cleaned = re.sub(r"\s+", " ", text).strip().rstrip(".").replace(".", "")
+    cleaned = re.sub(r"(?<=\d)(st|nd|rd|th)\b", "", cleaned, flags=re.IGNORECASE)
+    for fmt in DATE_FORMATS:
+        try:
+            return datetime.strptime(cleaned, fmt).date().isoformat()
+        except ValueError:
+            continue
+    raise Invalid(f"'{text.strip()}' is not a recognisable calendar date")
+
+
+STATES = {
+    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR", "california": "CA",
+    "colorado": "CO", "connecticut": "CT", "delaware": "DE", "district of columbia": "DC",
+    "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID", "illinois": "IL",
+    "indiana": "IN", "iowa": "IA", "kansas": "KS", "kentucky": "KY", "louisiana": "LA",
+    "maine": "ME", "maryland": "MD", "massachusetts": "MA", "michigan": "MI", "minnesota": "MN",
+    "mississippi": "MS", "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV",
+    "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
+    "north carolina": "NC", "north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR",
+    "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC", "south dakota": "SD",
+    "tennessee": "TN", "texas": "TX", "utah": "UT", "vermont": "VT", "virginia": "VA",
+    "washington": "WA", "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+}
 
 
 def norm_state(text: str) -> str:
-    cleaned = text.strip().rstrip(".")
-    if cleaned.lower() == "california":
-        return "CA"
-    if re.fullmatch(r"[A-Za-z]{2}", cleaned):
+    """A US state name or its two-letter code (any case) becomes the code, e.g. Texas / tx -> TX."""
+    cleaned = re.sub(r"\s+", " ", text).strip().rstrip(".").lower()
+    if cleaned in STATES:
+        return STATES[cleaned]
+    if cleaned.upper() in STATES.values():
         return cleaned.upper()
-    raise Invalid(f"'{cleaned}' is not a two-letter state")
+    raise Invalid(f"'{text.strip()}' is not a US state")
 
 
-def _number(text: str) -> float:
-    cleaned = text.strip()
-    if not re.fullmatch(r"-?\d+(\.\d+)?", cleaned):
-        raise Invalid(f"'{cleaned}' is not a number")
-    return float(cleaned)
+NUMBER_WORDS = {word: n for n, word in enumerate(
+    "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+    "fifteen sixteen seventeen eighteen nineteen twenty".split()
+)}
+RADIUS_UNITS = r"miles?|mi"
+COUNT_UNITS = r"vehicles?|units?|power units?|trucks?|autos?"
+
+
+def _number(text: str, units: str) -> float:
+    """A plain number, optionally with thousands commas, a unit and a number word:
+    '150', '150 miles', '150-mile', '1,200 mi', '4 vehicles', 'four trucks'.
+    Hedged answers ('about 150', 'under 100') do not match and are INVALID."""
+    cleaned = re.sub(r"(?<=\d),(?=\d{3}(?!\d))", "", text.strip())
+    match = re.fullmatch(rf"(-?\d+(?:\.\d+)?|[a-z]+)(?:[\s-]*(?:{units}))?\.?", cleaned, re.IGNORECASE)
+    if match:
+        number = match.group(1).lower()
+        if number in NUMBER_WORDS:
+            return float(NUMBER_WORDS[number])
+        if not number.isalpha():
+            return float(number)
+    raise Invalid(f"'{text.strip()}' is not a number")
 
 
 def norm_count(text: str) -> int:
-    number = _number(text)
+    number = _number(text, COUNT_UNITS)
     if number < 0:
         raise Invalid(f"'{text.strip()}' is negative")
     if not number.is_integer():
@@ -63,7 +103,7 @@ def norm_count(text: str) -> int:
 
 
 def norm_radius(text: str) -> int | float:
-    number = _number(text)
+    number = _number(text, RADIUS_UNITS)
     if number < 0:
         raise Invalid(f"'{text.strip()}' is negative")
     return int(number) if number.is_integer() else number  # 150.0 -> 150
@@ -71,9 +111,9 @@ def norm_radius(text: str) -> int | float:
 
 def norm_yes_no(text: str) -> bool:
     cleaned = text.strip().rstrip(".").lower()
-    if cleaned in ("yes", "true"):
+    if cleaned in ("yes", "y", "true"):
         return True
-    if cleaned in ("no", "false"):
+    if cleaned in ("no", "n", "false"):
         return False
     raise Invalid(f"'{text.strip()}' is not an explicit Yes or No")
 
@@ -101,6 +141,17 @@ def compare_key(field: str, value: FieldValue) -> FieldValue:
 # --- combining sources ---
 
 
+def ungrounded(found: SourceField) -> str | None:
+    """Why a stated answer cannot be trusted, or None if it can. The excerpt must have been found in
+    the source text (it has a locator) and the answer must appear inside that excerpt, so an
+    invented value with a real-looking quote is not shown as KNOWN."""
+    if not found.excerpt or found.locator is None:
+        return "its quoted text was not found in the source"
+    if not re.search(rf"(?<!\w){re.escape(squash(found.value_text))}(?!\w)", squash(found.excerpt)):
+        return f"answer '{found.value_text}' does not appear in its quoted text"
+    return None
+
+
 def merge_field(field: str, extractions: list[SourceExtraction]) -> MergedField:
     """Combine one LLM field across the sources (the email and the application PDF)."""
     checked = [e.source_file for e in extractions if e.error is None]
@@ -124,6 +175,11 @@ def merge_field(field: str, extractions: list[SourceExtraction]) -> MergedField:
             if found.value_text is None:
                 if found.excerpt:
                     not_provided.append(evidence)
+                continue
+            problem = ungrounded(found)
+            if problem:
+                invalid.append(evidence)
+                problems.append(f"{found.source_file}: {problem}")
                 continue
             try:
                 evidence.value = NORMALIZERS[field](found.value_text)

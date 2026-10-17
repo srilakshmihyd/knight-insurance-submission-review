@@ -145,6 +145,12 @@ def test_classify_pdf_recognises_loss_history_and_application():
     assert classify_pdf(_text_pdf("x.pdf", "Commercial auto application\nBusiness name"))[0] == "application"
 
 
+def test_classify_pdf_recognises_other_loss_report_titles():
+    for heading in ("Claims History", "Loss Experience Report", "Five-year claim history", "Insurer loss report"):
+        assert classify_pdf(_text_pdf("x.pdf", f"{heading}\nPolicy period")) == ("loss_runs", heading)
+    assert classify_pdf(_text_pdf("x.pdf", "Claims contact list\nName"))[0] == "other"
+
+
 def test_loss_runs_phrase_in_application_body_does_not_count():
     text = "Commercial auto application\nBusiness name\nA\nB\nC\nD\nLoss runs attached?\nYes"
     assert classify_pdf(_text_pdf("x.pdf", text))[0] == "application"

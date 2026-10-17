@@ -37,11 +37,13 @@ PDF = "application.pdf"
 # --- normalizers ---
 
 
-def test_state_california_and_ca_both_become_ca():
-    assert norm_state("California") == "CA"
-    assert norm_state("ca") == "CA"
-    with pytest.raises(Invalid):
-        norm_state("Calif")
+def test_state_names_and_codes_become_codes():
+    assert norm_state("California") == norm_state("ca") == "CA"
+    assert norm_state("Texas") == norm_state("TX") == "TX"
+    assert norm_state(" new  york. ") == "NY"
+    for text in ("Calif", "ZZ", "Ontario"):
+        with pytest.raises(Invalid):
+            norm_state(text)
 
 
 def test_radius_150_and_150_point_0_are_the_same():
@@ -49,8 +51,14 @@ def test_radius_150_and_150_point_0_are_the_same():
     assert norm_radius("150.1") == 150.1
 
 
-def test_radius_negative_or_not_numeric_is_invalid():
-    for text in ("-5", "about 100", "far"):
+def test_radius_with_units_and_commas():
+    for text in ("150 miles", "150 mi", "150-mile", "150 Miles."):
+        assert norm_radius(text) == 150
+    assert norm_radius("1,200 miles") == 1200
+
+
+def test_radius_negative_hedged_or_not_numeric_is_invalid():
+    for text in ("-5", "about 100", "under 150 miles", "100-200 miles", "far", "150 km"):
         with pytest.raises(Invalid):
             norm_radius(text)
 
@@ -58,7 +66,8 @@ def test_radius_negative_or_not_numeric_is_invalid():
 def test_count_must_be_a_nonnegative_whole_number():
     assert norm_count("0") == 0
     assert norm_count("3.0") == 3
-    for text in ("-1", "2.5", "three"):
+    assert norm_count("4 vehicles") == norm_count("four") == norm_count("Four trucks") == 4
+    for text in ("-1", "2.5", "about 4", "several"):
         with pytest.raises(Invalid):
             norm_count(text)
 
@@ -66,14 +75,20 @@ def test_count_must_be_a_nonnegative_whole_number():
 def test_yes_no_become_true_false_and_vague_is_invalid():
     assert norm_yes_no("Yes") is True
     assert norm_yes_no("no") is False
+    assert norm_yes_no("N") is False
     for text in ("maybe", "occasionally"):
         with pytest.raises(Invalid):
             norm_yes_no(text)
 
 
-def test_date_must_be_a_real_yyyy_mm_dd_date():
-    assert norm_date("2026-11-01") == "2026-11-01"
-    for text in ("2026-02-30", "11/01/2026"):
+def test_common_date_formats_become_yyyy_mm_dd():
+    for text in ("2026-11-01", "11/01/2026", "11/1/2026", "Nov 1, 2026", "Nov. 1, 2026",
+                 "November 1st, 2026", "1 November 2026"):
+        assert norm_date(text) == "2026-11-01"
+
+
+def test_impossible_or_unclear_date_is_invalid():
+    for text in ("2026-02-30", "02/30/2026", "next month", "Nov 2026", "ASAP"):
         with pytest.raises(Invalid):
             norm_date(text)
 
@@ -120,6 +135,38 @@ def test_not_provided_everywhere_is_missing_and_lists_checked_files():
     assert merged.value is None
     assert merged.checked_sources == [EMAIL, PDF]
     assert len(merged.evidence) == 2  # the "Not provided" lines are kept as proof
+
+
+def test_answer_not_in_its_own_excerpt_is_invalid():
+    invented = SourceField(field="operating_radius_miles", source_file=EMAIL, value_text="100",
+                           excerpt="Operating radius miles: 180", locator="email body")
+    merged = merge_field("operating_radius_miles",
+                         [SourceExtraction(source_file=EMAIL, source_kind="email", fields=[invented])])
+    assert (merged.state, merged.value) == ("INVALID", None)
+    assert "does not appear" in merged.note
+
+
+def test_answer_must_match_whole_words_in_excerpt():
+    partial = SourceField(field="operating_radius_miles", source_file=EMAIL, value_text="150",
+                          excerpt="Operating radius: 1500 miles", locator="email body")
+    merged = merge_field("operating_radius_miles",
+                         [SourceExtraction(source_file=EMAIL, source_kind="email", fields=[partial])])
+    assert merged.state == "INVALID"
+
+
+def test_excerpt_not_found_in_source_is_invalid():
+    unplaced = SourceField(field="business_name", source_file=PDF, value_text="Example LLC",
+                           excerpt="Applicant: Example LLC", locator=None)
+    merged = merge_field("business_name",
+                         [SourceExtraction(source_file=PDF, source_kind="application", fields=[unplaced])])
+    assert (merged.state, merged.value) == ("INVALID", None)
+    assert "not found in the source" in merged.note
+
+
+def test_texas_and_tx_are_not_a_conflict():
+    merged = merge_field("garaging_state", [_source(EMAIL, garaging_state="TX"),
+                                            _source(PDF, "application", garaging_state="Texas")])
+    assert (merged.state, merged.value) == ("KNOWN", "TX")
 
 
 def test_vague_answer_is_invalid():

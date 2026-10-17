@@ -18,7 +18,19 @@ from app.models import (
 # PDF classification looks only at the first few nonblank lines of page 1 (the document title area),
 # so a field label like "Loss runs attached?" inside an application body does not count.
 HEADING_LINES = 5
-LOSS_RUNS_PHRASES = ("loss run", "loss history")
+# Common titles for a loss runs report. Each names a loss or claims record, not just the word "claims".
+LOSS_RUNS_PHRASES = (
+    "loss run",
+    "loss history",
+    "loss experience",
+    "loss report",
+    "loss summary",
+    "claims history",
+    "claim history",
+    "claims experience",
+    "claims report",
+    "claims summary",
+)
 APPLICATION_PHRASE = "application"
 
 EXTENSION_KINDS: dict[str, FileKind] = {

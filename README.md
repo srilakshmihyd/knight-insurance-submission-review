@@ -34,12 +34,15 @@ inventory, the CSV vehicle count, loss runs detection and the rule results that 
 1. Upload all files from one packet (for example everything in `sample_submissions/SUB-A`), or
    paste the broker email into the text box.
 2. Click **Process packet**.
-3. Review the overall status, the rule results, each field with its evidence, and the attachment inventory.
+3. Review the overall status, the rule results, the **Needs attention** list, each field with its
+   evidence (fields that are not KNOWN open automatically), and the attachment inventory.
 4. To correct a field, choose it under **Correct a field**, type the value and apply. The checks
    rerun straight away. The field is labelled **HUMAN OVERRIDE**, and its original value and
    evidence are kept.
-5. Edit the draft broker email as needed. The app never sends email.
-6. Click **Start new packet** before loading another submission. This clears all data from the
+5. After a correction, a notice shows that the summary and draft email are out of date. Click
+   **Regenerate summary and email** to rewrite them with the corrected values.
+6. Edit the draft broker email as needed. The app never sends email.
+7. Click **Start new packet** before loading another submission. This clears all data from the
    previous packet.
 
 ## Tests
@@ -48,20 +51,25 @@ inventory, the CSV vehicle count, loss runs detection and the rule results that 
 pytest
 ```
 
-Result: 104 passed, 8 skipped. The skipped tests are the live LLM tests described below. The
+Result: 112 passed, 8 skipped. The skipped tests are the live LLM tests described below. The
 normal run never calls the live LLM; LLM calls are replaced with stubs or a fake client. The tests cover:
 
 - missing information (MISSING fields, R1 FLAG, the list of sources checked);
 - a source conflict (email and PDF disagree, so the value is null and both answers are kept);
 - unequal vehicle counts (R2 FLAG) and zero vehicles as a valid count;
 - the 150-mile threshold (150 passes and 150.1 is flagged);
-- loss runs detection (a readable report with zero claims, an email that only promises a report,
-  and an unreadable file);
-- normalization and human overrides (a correction is labelled, the original is kept, and the checks rerun);
+- loss runs detection (a readable report with zero claims, other report titles such as "Claims
+  history", an email that only promises a report, and an unreadable file);
+- normalization of harmless differences (state names such as "Texas", dates such as "Nov 1, 2026",
+  "150 miles", "4 vehicles"), while hedged answers such as "about 150" stay INVALID;
+- the grounding check (an answer missing from its own excerpt, or an excerpt not found in the
+  source, is INVALID);
+- human overrides (a correction is labelled, the original is kept, and the checks rerun);
 - LLM failures: a missing key, a connection error, or an answer that does not match the schema
   each show "LLM unavailable", and the results that come from files and the rules are kept;
 - the Streamlit screen, run with Streamlit's AppTest: an empty start screen, processing, the error
-  and success messages, corrections, and "Start new packet" clearing everything.
+  and success messages, corrections, the out-of-date notice and **Regenerate summary and email**
+  after a correction, and "Start new packet" clearing everything.
 
 Live LLM tests call the real API, so they run only when asked for:
 
@@ -141,18 +149,21 @@ How the main requirements are met:
 6 hours.
 
 ## Known limitations
-- **Strict formats.**
-  - Dates must be written as YYYY-MM-DD; other date formats become INVALID.
-  - Radius and vehicle count must be plain numbers ("150", not "150 miles").
-  - The only full state name converted to its code is California.
+- **Accepted formats.** Common forms are cleaned up in code: any US state name or code
+  ("Texas" -> TX); dates such as "11/01/2026", "Nov 1, 2026" or "1 November 2026"; numbers with a
+  unit or commas ("150 miles", "1,200 mi", "4 vehicles", "four"). Slashed dates are read
+  month/day/year. Hedged answers ("about 150", "under 100") stay INVALID on purpose.
+- **Grounding check.** An answer is used only if its quoted excerpt is found in the source text
+  and the answer appears word for word in that excerpt; otherwise the field is INVALID.
+- **Loss runs** are recognised by the page 1 heading (e.g. "Loss runs", "Loss history",
+  "Claims history", "Loss experience"). A report with an unusual title is not detected, and R5 FLAGs.
 - **Operations description** is compared as text, ignoring case and a final period. Different
   wording in the email and the PDF is shown as CONFLICT. No rule uses this field.
 - **If the LLM fails for every source,** the extracted fields cannot be checked, so R1 gives
   UNKNOWN rather than FLAG.
-- **After a correction** only the checks rerun. The summary and draft email still describe the
-  values as originally extracted.
-- **If the model's excerpt** cannot be found word for word in the source, its location is shown
-  as "location not found".
+- **After a correction** the checks rerun straight away. The summary and draft email are marked as
+  out of date until the reviewer clicks "Regenerate summary and email" (one more LLM call).
+  Regenerating replaces any edits made to the draft.
 
 ## Incomplete
 
