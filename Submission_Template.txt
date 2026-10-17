@@ -4,7 +4,7 @@ Full name: Srilakshmi Kanagala
 Email:kanagalasrilakshmi1998@gmail.com
 Source code ZIP attached or repository URL: https://github.com/srilakshmihyd/knight-insurance-submission-review
 Access instructions if the repository is private:"Not applicable"
-Demo video attachment or accessible URL (5-10 minutes): [FILL IN]
+Demo video attachment or accessible URL (5-10 minutes): https://drive.google.com/file/d/1NBWnzzGHImONtUgu_ntFmkXHw9-eO_yC/view?usp=sharing
 README location: README.md in the root of the project folder
 Setup and run commands:
   python3.11 -m venv .venv
