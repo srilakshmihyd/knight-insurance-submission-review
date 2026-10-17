@@ -2,7 +2,7 @@ Subject: AI Developer Project Submission - Srilakshmi Kanagala
 
 Full name: Srilakshmi Kanagala
 Email:kanagalasrilakshmi1998@gmail.com
-Source code ZIP attached or repository URL: [FILL IN: "ZIP attached" or the repository URL]
+Source code ZIP attached or repository URL: https://github.com/srilakshmihyd/knight-insurance-submission-review
 Access instructions if the repository is private:"Not applicable"
 Demo video attachment or accessible URL (5-10 minutes): [FILL IN]
 README location: README.md in the root of the project folder
